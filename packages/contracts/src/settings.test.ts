@@ -366,3 +366,29 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
   });
 });
+
+describe("AntigravitySettings", () => {
+  it("decodes default Antigravity settings as disabled with default binaryPath", () => {
+    const defaultSettings = decodeServerSettings({});
+    expect(defaultSettings.providers.antigravity).toBeDefined();
+    expect(defaultSettings.providers.antigravity.enabled).toBe(false);
+    expect(defaultSettings.providers.antigravity.binaryPath).toBe("agy");
+    expect(defaultSettings.providers.antigravity.customModels).toEqual([]);
+  });
+
+  it("decodes and normalizes Antigravity settings patches", () => {
+    const patch = decodeServerSettingsPatch({
+      providers: {
+        antigravity: {
+          enabled: true,
+          binaryPath: "  /usr/local/bin/agy  ",
+          customModels: ["gemini-3.7-flash-high"],
+        },
+      },
+    });
+
+    expect(patch.providers?.antigravity?.enabled).toBe(true);
+    expect(patch.providers?.antigravity?.binaryPath).toBe("/usr/local/bin/agy");
+    expect(patch.providers?.antigravity?.customModels).toEqual(["gemini-3.7-flash-high"]);
+  });
+});
