@@ -68,7 +68,9 @@ export function totalTokens(totals: UsageTokenTotals): number {
  * an order of magnitude.
  */
 export function mightCarryUsage(line: string, provider: UsageProviderKind): boolean {
-  return provider === "claude" ? line.includes('"usage"') : line.includes('"token_count"');
+  if (provider === "claude") return line.includes('"usage"');
+  if (provider === "codex") return line.includes('"token_count"');
+  return line.includes('"usage"') || line.includes('"PLANNER_RESPONSE"');
 }
 
 /* -------------------------------------------------------------------------- */
@@ -295,6 +297,125 @@ export function parseCodexLine(line: string, state: CodexScanState): UsageRecord
     // rollout, so they need no global dedup.
     dedupeKey: null,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Antigravity CLI                                                            */
+/* -------------------------------------------------------------------------- */
+
+export interface AntigravityScanState {
+  model: string;
+  sessionId: string;
+}
+
+export function initialAntigravityScanState(): AntigravityScanState {
+  return {
+    model: "gemini-3.7-flash-high",
+    sessionId: "",
+  };
+}
+
+export function parseAntigravityLine(
+  line: string,
+  state: AntigravityScanState,
+): UsageRecord | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+
+  const record = parsed as Record<string, unknown>;
+
+  if (typeof record["conversation_id"] === "string") {
+    state.sessionId = record["conversation_id"];
+  }
+
+  const content = typeof record["content"] === "string" ? record["content"] : "";
+  if (content.includes("<USER_SETTINGS_CHANGE>")) {
+    const match = content.match(/Model Selection` from [^`]+ to ([^`\n]+)/);
+    if (match && match[1]) {
+      const selected = match[1].trim();
+      if (selected.includes("Gemini 3.7 Flash")) state.model = "gemini-3.7-flash-high";
+      else if (selected.includes("Gemini 3.1 Pro")) state.model = "gemini-3.1-pro-high";
+      else if (selected.includes("Claude Opus")) state.model = "claude-opus-4-6";
+      else if (selected.includes("Claude Sonnet")) state.model = "claude-sonnet-5";
+      else state.model = selected.toLowerCase().replace(/[^a-z0-9.-]/g, "-");
+    }
+  }
+
+  const timestampMs = parseTimestampMs(record["created_at"] ?? record["timestamp"]);
+  if (timestampMs === null) return null;
+
+  const usage = record["usage"];
+  if (typeof usage === "object" && usage !== null) {
+    const usageRecord = usage as Record<string, unknown>;
+    const inputTokens = int(usageRecord["input_tokens"]);
+    const outputTokens = int(usageRecord["output_tokens"]);
+    const cacheReadTokens = int(
+      usageRecord["cache_read_tokens"] ?? usageRecord["cache_read_input_tokens"],
+    );
+    const reasoningTokens = int(
+      usageRecord["thinking_tokens"] ?? usageRecord["reasoning_output_tokens"],
+    );
+
+    const stepIndex = record["step_index"];
+    const dedupeKey = `${state.sessionId}:${stepIndex ?? timestampMs}`;
+
+    const totals: UsageTokenTotals = {
+      uncachedInputTokens: Math.max(0, inputTokens - cacheReadTokens),
+      cachedInputTokens: cacheReadTokens,
+      cacheCreationTokens: 0,
+      outputTokens,
+      reasoningTokens,
+    };
+
+    if (totalTokens(totals) === 0) return null;
+
+    return {
+      provider: "antigravity",
+      timestampMs,
+      model: state.model || "gemini-3.7-flash-high",
+      sessionId: state.sessionId,
+      totals,
+      reportedCostUsd: null,
+      dedupeKey,
+    };
+  }
+
+  if (record["type"] === "PLANNER_RESPONSE" && record["status"] === "DONE") {
+    const thinking = typeof record["thinking"] === "string" ? record["thinking"] : "";
+    const text = content.length > 0 ? content : thinking;
+    if (text.length === 0) return null;
+
+    const estimatedOutput = Math.max(1, Math.round(text.length / 4));
+    const estimatedReasoning =
+      thinking.length > 0 ? Math.max(1, Math.round(thinking.length / 4)) : 0;
+    const stepIndex = record["step_index"];
+    const dedupeKey = `${state.sessionId}:${stepIndex ?? timestampMs}`;
+
+    const totals: UsageTokenTotals = {
+      uncachedInputTokens: 0,
+      cachedInputTokens: 0,
+      cacheCreationTokens: 0,
+      outputTokens: estimatedOutput,
+      reasoningTokens: estimatedReasoning,
+    };
+
+    return {
+      provider: "antigravity",
+      timestampMs,
+      model: state.model || "gemini-3.7-flash-high",
+      sessionId: state.sessionId,
+      totals,
+      reportedCostUsd: null,
+      dedupeKey,
+    };
+  }
+
+  return null;
 }
 
 export { EMPTY_TOTALS };

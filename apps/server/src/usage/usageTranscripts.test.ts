@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  initialAntigravityScanState,
   initialCodexScanState,
+  parseAntigravityLine,
   parseClaudeLine,
   parseCodexLine,
   totalTokens,
@@ -233,6 +235,65 @@ describe("parseCodexLine", () => {
       );
       expect(record).not.toBeNull();
     });
+  });
+});
+
+describe("parseAntigravityLine", () => {
+  it("extracts token totals from step_update usage", () => {
+    const state = initialAntigravityScanState();
+    const line = JSON.stringify({
+      step_index: 3,
+      conversation_id: "conv-12345",
+      type: "PLANNER_RESPONSE",
+      created_at: "2026-08-26T16:00:00.000Z",
+      usage: {
+        input_tokens: 500,
+        cache_read_tokens: 200,
+        output_tokens: 150,
+        thinking_tokens: 50,
+      },
+    });
+
+    const record = parseAntigravityLine(line, state);
+    expect(record).not.toBeNull();
+    expect(record?.provider).toBe("antigravity");
+    expect(record?.sessionId).toBe("conv-12345");
+    expect(record?.model).toBe("gemini-3.7-flash-high");
+    expect(record?.totals).toEqual({
+      uncachedInputTokens: 300,
+      cachedInputTokens: 200,
+      cacheCreationTokens: 0,
+      outputTokens: 150,
+      reasoningTokens: 50,
+    });
+    expect(record?.dedupeKey).toBe("conv-12345:3");
+  });
+
+  it("updates model when user settings change message is parsed", () => {
+    const state = initialAntigravityScanState();
+    const settingsLine = JSON.stringify({
+      step_index: 0,
+      type: "USER_INPUT",
+      created_at: "2026-08-26T16:00:00.000Z",
+      content:
+        "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from None to Gemini 3.1 Pro (High).\n</USER_SETTINGS_CHANGE>",
+    });
+
+    parseAntigravityLine(settingsLine, state);
+    expect(state.model).toBe("gemini-3.1-pro-high");
+
+    const usageLine = JSON.stringify({
+      step_index: 1,
+      type: "PLANNER_RESPONSE",
+      created_at: "2026-08-26T16:00:05.000Z",
+      usage: {
+        input_tokens: 100,
+        output_tokens: 50,
+      },
+    });
+
+    const record = parseAntigravityLine(usageLine, state);
+    expect(record?.model).toBe("gemini-3.1-pro-high");
   });
 });
 
