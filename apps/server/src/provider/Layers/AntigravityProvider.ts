@@ -13,6 +13,7 @@ import * as Result from "effect/Result";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
+import { discoverAntigravitySkills } from "../Drivers/AntigravitySkills.ts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import {
@@ -27,6 +28,8 @@ import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
 const ANTIGRAVITY_PRESENTATION = {
   displayName: "Antigravity",
@@ -188,13 +191,15 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
   function* (
     settings: AntigravitySettings,
     environment: NodeJS.ProcessEnv = process.env,
+    cwd?: string,
   ): Effect.fn.Return<
     ServerProviderDraft,
     never,
-    ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
+    ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
   > {
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
     const fallbackModels = antigravityModelsFromSettings(settings.customModels);
+    const skills = yield* discoverAntigravitySkills(cwd);
 
     if (!settings.enabled) {
       return buildServerProvider({
@@ -202,6 +207,7 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
         enabled: false,
         checkedAt,
         models: fallbackModels,
+        skills,
         probe: {
           installed: false,
           version: null,
@@ -227,6 +233,7 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
         enabled: settings.enabled,
         checkedAt,
         models: fallbackModels,
+        skills,
         probe: {
           installed: !isCommandMissingCause(error),
           version: null,
@@ -245,6 +252,7 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
         enabled: settings.enabled,
         checkedAt,
         models: fallbackModels,
+        skills,
         probe: {
           installed: true,
           version: null,
@@ -268,6 +276,7 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
         enabled: settings.enabled,
         checkedAt,
         models: fallbackModels,
+        skills,
         probe: {
           installed: true,
           version,
@@ -301,6 +310,7 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
       enabled: settings.enabled,
       checkedAt,
       models,
+      skills,
       probe: {
         installed: true,
         version,

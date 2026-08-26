@@ -111,11 +111,15 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
         instanceId,
       });
       const textGeneration = yield* makeAntigravityTextGeneration(effectiveConfig, processEnv);
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
 
       const checkProvider = checkAntigravityProviderStatus(effectiveConfig, processEnv).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
       );
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
