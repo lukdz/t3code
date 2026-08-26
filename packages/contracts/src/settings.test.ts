@@ -51,6 +51,22 @@ describe("ClientSettings glass opacity", () => {
   });
 });
 
+describe("ClientSettings appearance contrast", () => {
+  it("defaults to the theme's original contrast", () => {
+    expect(decodeClientSettings({}).appearanceContrast).toBe(100);
+  });
+
+  it.each([49, 201, 92.5])("rejects an invalid appearance contrast: %s", (value) => {
+    expect(() => decodeClientSettings({ appearanceContrast: value })).toThrow();
+    expect(() => decodeClientSettingsPatch({ appearanceContrast: value })).toThrow();
+  });
+
+  it.each([50, 100, 150, 200])("accepts an appearance contrast in range: %s", (value) => {
+    expect(decodeClientSettings({ appearanceContrast: value }).appearanceContrast).toBe(value);
+    expect(decodeClientSettingsPatch({ appearanceContrast: value }).appearanceContrast).toBe(value);
+  });
+});
+
 describe("ClientSettings environment identification", () => {
   it("defaults to artwork and accepts each presentation mode", () => {
     expect(decodeClientSettings({}).environmentIdentificationMode).toBe("artwork");
@@ -348,5 +364,31 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
+  });
+});
+
+describe("AntigravitySettings", () => {
+  it("decodes default Antigravity settings as disabled with default binaryPath", () => {
+    const defaultSettings = decodeServerSettings({});
+    expect(defaultSettings.providers.antigravity).toBeDefined();
+    expect(defaultSettings.providers.antigravity.enabled).toBe(false);
+    expect(defaultSettings.providers.antigravity.binaryPath).toBe("agy");
+    expect(defaultSettings.providers.antigravity.customModels).toEqual([]);
+  });
+
+  it("decodes and normalizes Antigravity settings patches", () => {
+    const patch = decodeServerSettingsPatch({
+      providers: {
+        antigravity: {
+          enabled: true,
+          binaryPath: "  /usr/local/bin/agy  ",
+          customModels: ["gemini-3.7-flash-high"],
+        },
+      },
+    });
+
+    expect(patch.providers?.antigravity?.enabled).toBe(true);
+    expect(patch.providers?.antigravity?.binaryPath).toBe("/usr/local/bin/agy");
+    expect(patch.providers?.antigravity?.customModels).toEqual(["gemini-3.7-flash-high"]);
   });
 });

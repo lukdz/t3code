@@ -18,8 +18,10 @@ import * as NodeReadline from "node:readline";
 import type { UsageProviderKind } from "@t3tools/contracts";
 
 import {
+  initialAntigravityScanState,
   initialCodexScanState,
   mightCarryUsage,
+  parseAntigravityLine,
   parseClaudeLine,
   parseCodexLine,
   type UsageRecord,
@@ -108,6 +110,7 @@ export async function readTranscriptRecords(
 ): Promise<readonly UsageRecord[] | null> {
   const records: UsageRecord[] = [];
   const codexState = initialCodexScanState();
+  const antigravityState = initialAntigravityScanState();
 
   try {
     const lines = NodeReadline.createInterface({
@@ -125,6 +128,15 @@ export async function readTranscriptRecords(
           continue;
         }
         const record = parseCodexLine(line, codexState);
+        if (record !== null) records.push(record);
+        continue;
+      }
+
+      if (provider === "antigravity") {
+        if (!mightCarryUsage(line, provider) && !line.includes('"USER_SETTINGS_CHANGE"')) {
+          continue;
+        }
+        const record = parseAntigravityLine(line, antigravityState);
         if (record !== null) records.push(record);
         continue;
       }
